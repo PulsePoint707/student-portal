@@ -1,0 +1,256 @@
+<!DOCTYPE html> 
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Portal</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif; background: #f8f9fa; color: #333;
+    }
+    header {
+      background: #fff; padding: 15px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+    }
+    header h1 {
+      font-size: 1.5rem; font-weight: 600; color: #2c3e50; margin: 0;
+    }
+    nav { display: flex; justify-content: space-between; align-items: center; }
+    #logoutBtn {
+      background: #e74c3c; border: none; padding: 8px 16px; color: #fff;
+      border-radius: 6px; cursor: pointer; font-weight: 500; transition: background 0.3s;
+    }
+    #logoutBtn:hover { background: #c0392b; }
+    main {
+      max-width: 800px; margin: 80px auto; padding: 0 20px;
+    }
+    .card {
+      background: #fff; margin-bottom: 20px; padding: 25px;
+      border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .card h2 {
+      font-size: 1.3rem; font-weight: 600; color: #34495e; margin-top: 0; margin-bottom: 15px;
+    }
+    label {
+      display: block; margin-top: 10px; font-weight: 500; color: #555;
+    }
+    input[type="text"] {
+      width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ddd;
+      border-radius: 6px; font-size: 14px; transition: border-color 0.3s;
+    }
+    input[type="text"]:focus { border-color: #3498db; outline: none; }
+    button {
+      margin-top: 15px; padding: 10px 20px; background: #3498db; color: #fff;
+      border: none; border-radius: 6px; cursor: pointer; font-weight: 500; transition: background 0.3s;
+    }
+    button:hover { background: #2980b9; }
+    .timer { font-weight: 600; color: #e74c3c; margin-top: 10px; }
+    #timerDiv { margin-top: 15px; display: none; }
+    #answerForm { margin-top: 15px; display: none; }
+    #result {
+      margin-top: 20px; padding: 15px; background: #f1f3f5; border-radius: 6px;
+      color: #2c3e50; font-weight: 500;
+    }
+    /* Notifications */
+    #notification {
+      position: fixed; top: 20px; right: 20px; background: #27ae60; color: #fff;
+      padding: 12px 20px; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      display: none; z-index: 9999; font-weight: 500; animation: slideIn 0.3s ease-out;
+    }
+    #notification.error { background: #e74c3c; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); } to { transform: translateX(0); }
+    }
+  </style>
+</head>
+<body>
+  <div id="notification"></div>
+  <header>
+    <nav>
+      <h1>Student Portal</h1>
+      <button id="logoutBtn">Logout</button>
+    </nav>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Live Q&A</h2>
+      <div id="questionDisplay">No active question at the moment.</div>
+      <div id="timerDiv">
+        Time left: <span id="countdown" class="timer"></span> seconds
+      </div>
+      <form id="answerForm">
+        <label for="studentAnswer">Your Answer:</label>
+        <input type="text" id="studentAnswer" required placeholder="Type your answer here">
+        <button type="submit">Submit Answer</button>
+      </form>
+      <div id="result"></div>
+    </div>
+  </main>
+  <script>
+    function showNotification(msg, isError = false) {
+      const notif = document.getElementById("notification");
+      notif.textContent = msg;
+      if(isError) notif.classList.add("error"); else notif.classList.remove("error");
+      notif.style.display = "block";
+      setTimeout(() => { notif.style.display = "none"; }, 3000);
+    }
+    
+    document.addEventListener("DOMContentLoaded", function() {
+      // (Optional) Enforce login by checking localStorage.userRole
+      // if(localStorage.getItem("userRole") !== "student") {
+      //   window.location.href = "login-portal.html";
+      //   return;
+      // }
+      // Ensure the student is marked as logged in:
+      let studentId = localStorage.getItem("studentId") || "student_" + Math.random().toString(36).substr(2,9);
+      localStorage.setItem("studentId", studentId);
+      let studentName = localStorage.getItem("studentName") || "Student";
+      localStorage.setItem("studentName", studentName);
+      let loggedIn = JSON.parse(localStorage.getItem("loggedInStudents") || "[]");
+      if(!loggedIn.includes(studentName)) {
+        loggedIn.push(studentName);
+        localStorage.setItem("loggedInStudents", JSON.stringify(loggedIn));
+      }
+      loadActiveQuestion();
+    });
+    
+    document.getElementById("logoutBtn").addEventListener("click", function() {
+      showNotification("Logging out...", false);
+      let studentName = localStorage.getItem("studentName");
+      let loggedIn = JSON.parse(localStorage.getItem("loggedInStudents") || "[]");
+      loggedIn = loggedIn.filter(name => name !== studentName);
+      localStorage.setItem("loggedInStudents", JSON.stringify(loggedIn));
+      localStorage.removeItem("studentId");
+      localStorage.removeItem("studentName");
+      window.location.href = "login-portal.html";
+    });
+    
+    let timerInterval;
+    function loadActiveQuestion() {
+      const qStr = localStorage.getItem("currentQuestion");
+      const questionDisplay = document.getElementById("questionDisplay");
+      const answerForm = document.getElementById("answerForm");
+      const timerDiv = document.getElementById("timerDiv");
+      const countdownEl = document.getElementById("countdown");
+      
+      if(!qStr) {
+        questionDisplay.innerText = "No active question at the moment.";
+        answerForm.style.display = "none";
+        timerDiv.style.display = "none";
+        clearInterval(timerInterval);
+        return;
+      }
+      
+      let qObj = JSON.parse(qStr);
+      if(qObj.ended) {
+        questionDisplay.innerHTML = `<p><strong>Question:</strong> ${qObj.text}</p>
+          <p style="color: #e74c3c;"><em>(This question has ended)</em></p>`;
+        if(qObj.picBase64) {
+          questionDisplay.innerHTML += `<br><img src="${qObj.picBase64}" style="max-width:300px;">`;
+        }
+        answerForm.style.display = "none";
+        timerDiv.style.display = "none";
+        clearInterval(timerInterval);
+      } else {
+        questionDisplay.innerHTML = `<p><strong>Question:</strong> ${qObj.text}</p>`;
+        if(qObj.picBase64) {
+          questionDisplay.innerHTML += `<br><img src="${qObj.picBase64}" style="max-width:300px;">`;
+        }
+        answerForm.style.display = "block";
+        document.getElementById("studentAnswer").disabled = false;
+        
+        if(qObj.type.toLowerCase() === "attention" && qObj.timer) {
+          timerDiv.style.display = "block";
+          let startTime = qObj.sendTime;
+          clearInterval(timerInterval);
+          timerInterval = setInterval(function(){
+            let elapsed = Math.floor((Date.now() - startTime) / 1000);
+            let remaining = parseInt(qObj.timer, 10) - elapsed;
+            countdownEl.innerText = remaining > 0 ? remaining : 0;
+            if(remaining <= 0) {
+              clearInterval(timerInterval);
+              document.getElementById("studentAnswer").disabled = true;
+            }
+          }, 1000);
+        } else {
+          timerDiv.style.display = "none";
+          clearInterval(timerInterval);
+        }
+      }
+    }
+    
+    document.getElementById("answerForm").addEventListener("submit", function(e) {
+      e.preventDefault();
+      const qStr = localStorage.getItem("currentQuestion");
+      if(!qStr) {
+        showNotification("No active question.", true);
+        return;
+      }
+      let qObj = JSON.parse(qStr);
+      if(qObj.ended) {
+        showNotification("This question has ended. You cannot submit.", true);
+        return;
+      }
+      
+      const subKey = "submission_" + localStorage.getItem("studentId");
+      if(localStorage.getItem(subKey)) {
+        let existingSub = JSON.parse(localStorage.getItem(subKey));
+        if(existingSub.questionId === qObj.questionId) {
+          showNotification("You have already submitted an answer!", true);
+          return;
+        }
+      }
+      
+      let answer = document.getElementById("studentAnswer").value.trim();
+      if(!answer) {
+        showNotification("Please enter your answer.", true);
+        return;
+      }
+      
+      let mark = 0, percentage = 0;
+      // For Attention questions, compare the student's answer to teacher's correctAnswer.
+      if(qObj.type.toLowerCase() === "attention" && qObj.correctAnswer) {
+        let elapsedSec = Math.floor((Date.now() - qObj.sendTime) / 1000);
+        let timeLeft = parseInt(qObj.timer, 10) - elapsedSec;
+        if(timeLeft >= 0 && answer.toLowerCase() === qObj.correctAnswer.toLowerCase()){
+          mark = 1;
+          percentage = 100;
+        } else {
+          mark = 0;
+          percentage = 0;
+        }
+      } else if(qObj.type.toLowerCase() === "conceptual") {
+        let maxM = parseInt(qObj.conceptualMaxMark || "1", 10);
+        let keys = (qObj.conceptualKeywords || "").split("/").map(k => k.trim().toLowerCase()).filter(k => k);
+        let found = 0;
+        let lowerAns = answer.toLowerCase();
+        keys.forEach(k => { if(lowerAns.includes(k)) { found++; } });
+        mark = Math.round((found / keys.length) * maxM) || 0;
+        if(qObj.bonus && answer.length > 0) {
+          mark += 1;
+          if(mark > maxM) mark = maxM;
+        }
+        percentage = Math.round((mark / maxM) * 100);
+      }
+      
+      const submission = {
+        questionId: qObj.questionId,
+        studentId: localStorage.getItem("studentId"),
+        studentName: localStorage.getItem("studentName"),
+        answer,
+        mark,
+        percentage,
+        submittedAt: Date.now()
+      };
+      localStorage.setItem(subKey, JSON.stringify(submission));
+      showNotification(`Your answer submitted. Mark: ${mark} (${percentage}%)`, false);
+      document.getElementById("result").innerHTML =
+        `<h4>Your answer is recorded. Mark: ${mark} (${percentage}%)</h4>`;
+      this.reset();
+      this.style.display = "none";
+    });
+  </script>
+</body>
+</html>
